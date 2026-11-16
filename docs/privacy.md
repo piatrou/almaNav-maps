@@ -65,4 +65,4 @@ If this policy changes, the new version and date are shown at the top and in the
 
 ## Contact
 
-Aliaksandr Piatrou, [contact email to be added].
+Aliaksandr Piatrou.

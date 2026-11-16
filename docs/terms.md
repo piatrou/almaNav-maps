@@ -153,5 +153,5 @@ of these Terms is found invalid or unenforceable, the rest remains in effect.
 
 ## 14. Contact
 
-Aliaksandr Piatrou, [contact email to be added]. Bug reports and map problems: please fix map errors directly on openstreetmap.org, which
+Aliaksandr Piatrou. Bug reports and map problems: please fix map errors directly on openstreetmap.org, which
 improves the App for everyone.
