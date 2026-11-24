@@ -28,7 +28,7 @@ if cmd[:2] == ["s3", "ls"]:
     prefix = key(cmd[2])
     found = [p for p in sorted(bucket.rglob("*")) if p.is_file() and str(p.relative_to(bucket)).startswith(prefix)]
     for p in found:
-        print("2026-11-05 10:00:00 1 " + str(p.relative_to(bucket)))
+        print(f"2026-11-05 10:00:00 {p.stat().st_size} " + str(p.relative_to(bucket)))
     sys.exit(0 if found else 1)  # the real CLI exits 1, silently, when nothing matches
 elif cmd[:2] == ["s3", "cp"]:
     src, dst = cmd[2], cmd[3]
@@ -105,3 +105,20 @@ def test_list_of_an_empty_bucket(tmp_path, env):
 
 def test_list_fails_on_a_real_error(tmp_path, env):
     assert run({**env, "FAKE_FAIL": "s3://mynav-maps/packs/"}, "list").returncode != 0
+
+
+def test_usage_sums_each_version_and_the_bucket(tmp_path, env):
+    d = pack(tmp_path, ["lanes.json", "search.sqlite"])  # 10 + 13 bytes
+    run(env, "pack", str(d), "packs/cyprus/v1/")
+    run(env, "pack", str(d), "packs/greece/v2/")
+    (tmp_path / "m.json").write_text("{}")
+    run(env, "put-manifest", str(tmp_path / "m.json"))
+    r = run(env, "usage")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"*": 48, "packs/cyprus/v1/": 23, "packs/greece/v2/": 23}
+
+
+def test_usage_of_an_empty_bucket(tmp_path, env):
+    r = run(env, "usage")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"*": 0}

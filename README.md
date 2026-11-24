@@ -8,6 +8,7 @@ A pack is one country (or a Geofabrik region for the big ones), built from the G
 
 - Valhalla routing tiles (`valhalla_tiles.tar`), built with the same Valhalla version the app embeds
   (valhalla-mobile 0.6.4 = Valhalla 3.9.1); a mismatch makes the app refuse the tiles;
+- the trail graph (`trail_tiles.tar`, see [Trail graph](#trail-graph));
 - `lanes.json` and `landmarks.json` for the voice cues;
 - an offline base map (`.mbtiles`, OpenMapTiles schema);
 - a `manifest.json` entry: version, size, sha256.
@@ -32,6 +33,27 @@ Locally (Docker; PyICU needs ICU: `brew install icu4c pkg-config`,
     uv sync && uv run pytest
     scripts/build_block.sh cyprus work/cyprus          # one pack: work/cyprus/cyprus/ + cyprus.entry.json
     scripts/build_block.sh us-appalachia work/appalachia   # every member of a block
+
+## Trail graph
+
+The app's dirt slider past the middle routes on a second graph, built from a copy of the extract
+([mapspack/trail.py](mapspack/trail.py)) where every drivable paved way gets `maxspeed=10` and every unpaved one
+`maxspeed=80`: Valhalla's fastest way there is the dirtiest one, and the app blends back towards the shortest with
+`use_distance`, up to a TransEuroTrail-like ride at the end of the slider. The speeds only steer the search; the app
+takes the cues, speeds and time from the normal graph. Why these numbers: Valhalla ignores a maxspeed under 10, and a
+track's default speed (about 7 km/h) is below the slowed asphalt, so dirt needs an explicit fast speed. A surface tag
+decides what is dirt; an untagged track is dirt unless `tracktype=grade1`. The app also lifts Valhalla's hierarchy
+limits on this graph (minor roads are otherwise searched only 5 km around the ends). Built without elevation: the
+app reads grades from the normal graph. About the size of `valhalla_tiles.tar` (Cyprus: 72 MB against 73 MB, 8 s);
+a block splits it per member like the normal tiles.
+
+## Bucket budget
+
+R2's free tier is 10 GB. Blocks build and publish one at a time: before uploading, a block reads the bucket's usage
+(`scripts/publish.sh usage`) and `mapspack budget` names the retired versions (not in the manifest) to delete,
+oldest first, to keep the bucket under 9.5 GB with the new files in; when even that is not enough, the job fails
+before uploading anything. The manifest then switches to the block's new version, which retires its old one.
+A last `sweep` job deletes retired versions after their 7 days.
 
 ## Blocks
 
@@ -71,8 +93,8 @@ Belarus has since been replaced by the `us-appalachia` block, measured locally (
 
 The split gives North Carolina 312 tiles and Tennessee 267; 30 border tiles are in both (70 MB over the block's
 graph). Peak disk for the block job is about 5 GB (extracts, merged extract, block graph, split tars); tables are
-the slow step. Cyprus, Greece and the block: about 3.5 GB of the 10 GB R2 free tier, so place details stay on. A monthly run keeps at most two versions
-per country for 7 days (about 7 GB at peak). A whole job takes 25 min for Greece or Belarus (4 min of it freeing
+the slow step. Cyprus, Greece and the block: about 3.5 GB of the 10 GB R2 free tier, about 5.5 GB with the trail graphs. A monthly
+run keeps the old version of a country for 7 days while the budget allows (see [Bucket budget](#bucket-budget)). A whole job takes 25 min for Greece or Belarus (4 min of it freeing
 disk on the runner).
 
 ## License

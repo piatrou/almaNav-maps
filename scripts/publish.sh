@@ -6,6 +6,7 @@
 #                                          other error fails (never mistake an outage for an empty bucket)
 #   publish.sh put-manifest <file>         switch the manifest: always the last step of a publish
 #   publish.sh list                        {"<id>": [versions]} of what the bucket holds, as JSON
+#   publish.sh usage                       {"<prefix>": bytes} per stored version, and "*" for the whole bucket
 #   publish.sh delete <prefix>             remove a retired version
 set -euo pipefail
 BUCKET=mynav-maps
@@ -15,7 +16,7 @@ export AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCE
 export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
 ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 s3() { aws s3 --endpoint-url "$ENDPOINT" "$@"; }
-FILES="valhalla_tiles.tar lanes.json landmarks.json basemap.mbtiles search.sqlite zones.json"
+FILES="valhalla_tiles.tar trail_tiles.tar lanes.json landmarks.json basemap.mbtiles search.sqlite zones.json"
 
 case "${1:-}" in
   pack)
@@ -40,19 +41,27 @@ case "${1:-}" in
     fi ;;
   put-manifest)
     s3 cp --only-show-errors "$2" "s3://$BUCKET/manifest.json" --content-type application/json --cache-control no-cache ;;
-  list)
+  list|usage)
     # exit 1 with nothing on stderr is how the CLI says "no objects"; anything on stderr is a real failure
     errfile=$(mktemp)
-    listing=$(s3 ls "s3://$BUCKET/packs/" --recursive 2> "$errfile") || [ ! -s "$errfile" ] || {
+    root=packs/; [ "$1" = usage ] && root=
+    listing=$(s3 ls "s3://$BUCKET/$root" --recursive 2> "$errfile") || [ ! -s "$errfile" ] || {
       cat "$errfile" >&2; echo "listing the bucket failed" >&2; exit 1; }
-    python3 - "$listing" <<'PY'
+    python3 - "$1" "$listing" <<'PY'
 import json, sys
-out = {}
-for line in sys.argv[1].splitlines():
-    parts = line.split()[-1].split("/")  # packs/<id>/<version>/<file>
-    if len(parts) >= 4:
-        out.setdefault(parts[1], set()).add(parts[2])
-print(json.dumps({k: sorted(v) for k, v in out.items()}))
+versions, usage = {}, {"*": 0}
+for line in sys.argv[2].splitlines():
+    size, key = line.split()[2], line.split()[-1]  # <date> <time> <size> <key>
+    usage["*"] += int(size)
+    parts = key.split("/")  # packs/<id>/<version>/<file>
+    if parts[0] == "packs" and len(parts) >= 4:
+        versions.setdefault(parts[1], set()).add(parts[2])
+        prefix = "/".join(parts[:3]) + "/"
+        usage[prefix] = usage.get(prefix, 0) + int(size)
+if sys.argv[1] == "usage":
+    print(json.dumps(usage))
+else:
+    print(json.dumps({k: sorted(v) for k, v in versions.items()}))
 PY
     ;;
   delete)

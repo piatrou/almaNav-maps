@@ -1,4 +1,4 @@
-"""Entry points for the workflow: python -m mapspack <tables|entry|version|plan|split|merge|retired> ..."""
+"""Entry points for the workflow: python -m mapspack <tables|trail|entry|version|plan|split|merge|retired|budget> ..."""
 
 import argparse
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import osmium
 
-from . import landmarks, lanes, manifest, outline, search, tiles, zones
+from . import landmarks, lanes, manifest, outline, search, tiles, trail, zones
 from .config import load_brands, load_countries, plan
 
 
@@ -41,6 +41,10 @@ def tables(args):
     print("search:", search.build(args.pbf, out / "search.sqlite", place_details))
 
 
+def trail_extract(args):
+    print("trail:", trail.build(args.pbf, args.out))
+
+
 def entry(args):
     c, _ = _country(args.country)
     version = args.version or pbf_version(args.pbf)
@@ -64,7 +68,7 @@ def split(args):
         cid, _, packdir = spec.partition("=")
         c, _ = _country(cid)
         members[c.id] = (outline.from_poly(outline.fetch(c.geofabrik), tolerance=0), Path(packdir))
-    for cid, n in tiles.split(args.tar, members).items():
+    for cid, n in tiles.split(args.tar, members, args.name).items():
         print(f"{cid}: {n} tiles")
 
 
@@ -81,12 +85,28 @@ def retired(args):
         print(prefix)
 
 
+def budget(args):
+    usage = json.loads(Path(args.usage).read_text())
+    current = json.loads(Path(args.manifest).read_text()) if Path(args.manifest).exists() else None
+    incoming = sum(f.stat().st_size for d in args.packdirs for f in Path(d).iterdir() if f.is_file())
+    print(f"bucket {usage.get('*', 0) / 1e9:.2f} GB + upload {incoming / 1e9:.2f} GB, budget {args.limit / 1e9:.1f} GB",
+          file=sys.stderr)
+    try:
+        for prefix in manifest.to_free(usage, current, incoming, args.limit):
+            print(prefix)
+    except manifest.OverBudget as e:
+        sys.exit(str(e))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="mapspack")
     sub = p.add_subparsers(required=True)
     s = sub.add_parser("tables", help="lanes, landmarks, zones, search for one country")
     s.add_argument("country"); s.add_argument("pbf", type=Path); s.add_argument("outdir")
     s.set_defaults(fn=tables)
+    s = sub.add_parser("trail", help="the trail extract: paved roads slow, dirt fast, for trail_tiles.tar")
+    s.add_argument("pbf", type=Path); s.add_argument("out", type=Path)
+    s.set_defaults(fn=trail_extract)
     s = sub.add_parser("entry", help="manifest entry of a built pack (JSON on stdout)")
     s.add_argument("country"); s.add_argument("pbf", type=Path); s.add_argument("packdir")
     s.add_argument("--version", help="the block's version instead of the extract's date")
@@ -99,6 +119,7 @@ def main(argv=None):
     s.set_defaults(fn=plan_blocks)
     s = sub.add_parser("split", help="a block's valhalla_tiles.tar split per member: <id>=<packdir> ...")
     s.add_argument("tar", type=Path); s.add_argument("members", nargs="+")
+    s.add_argument("--name", default="valhalla_tiles.tar", help="the tar each member gets")
     s.set_defaults(fn=split)
     s = sub.add_parser("merge", help="new manifest from the old one and built entries (JSON on stdout)")
     s.add_argument("old"); s.add_argument("entries")
@@ -106,5 +127,9 @@ def main(argv=None):
     s = sub.add_parser("retired", help="version prefixes to delete, one per line")
     s.add_argument("manifest"); s.add_argument("listing")
     s.set_defaults(fn=retired)
+    s = sub.add_parser("budget", help="retired version prefixes to delete before uploading packdirs, one per line")
+    s.add_argument("manifest"); s.add_argument("usage"); s.add_argument("packdirs", nargs="+")
+    s.add_argument("--limit", type=int, default=manifest.BUDGET)
+    s.set_defaults(fn=budget)
     args = p.parse_args(argv)
     args.fn(args)

@@ -1,4 +1,5 @@
-# Monthly country packs: build each block (a country, or neighbours routed across as one graph), upload it under an immutable version path, then switch the manifest.
+# Monthly country packs: build each block (a country, or neighbours routed across as one graph), one at a time; upload it
+# under an immutable version path within the bucket budget, then switch the manifest to it.
 name: Build packs
 
 on:
@@ -37,10 +38,11 @@ jobs:
   build:
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     strategy:
       fail-fast: false
-      max-parallel: 2
+      # one block at a time: each switches the manifest and checks the bucket budget after the one before
+      max-parallel: 1
       matrix:
         block: ${{ fromJson(needs.plan.outputs.blocks) }}
     steps:
@@ -56,24 +58,31 @@ jobs:
       - run: uv sync
       - name: Build the block's packs
         run: scripts/build_block.sh ${{ matrix.block }} work
-      - name: Upload packs
+      - name: Publish the block
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          for entry in work/*.entry.json; do
-            id=$(basename "$entry" .entry.json)
-            prefix=$(python3 -c "import json; e=json.load(open('$entry')); print(f\"packs/{e['id']}/{e['version']}/\")")
+          mkdir -p entries && cp work/*.entry.json entries/
+          ids=$(for e in entries/*.entry.json; do basename "$e" .entry.json; done)
+          scripts/publish.sh get-manifest current.json
+          # R2's free tier is 10 GB: make room from retired versions first, or publish nothing
+          scripts/publish.sh usage > usage.json
+          uv run python -m mapspack budget current.json usage.json $(for id in $ids; do echo "work/$id"; done) > free.txt
+          while read -r prefix; do echo "delete $prefix (over budget)"; scripts/publish.sh delete "$prefix"; done < free.txt
+          for id in $ids; do
+            prefix=$(python3 -c "import json; e=json.load(open('entries/$id.entry.json')); print(f\"packs/{e['id']}/{e['version']}/\")")
             scripts/publish.sh pack "work/$id" "$prefix"
           done
+          # the manifest switches last, per block: a client never sees a half-published pack
+          uv run python -m mapspack merge current.json entries > manifest.json
+          scripts/publish.sh put-manifest manifest.json
+          python3 -c "import json; m=json.load(open('manifest.json')); print(sum(f['size'] for p in m['packs'] for f in p['files'])/1e9, 'GB in current packs'); [print(p['id'], p['version']) for p in m['packs']]"
+          scripts/publish.sh usage | python3 -c "import json, sys; print(json.load(sys.stdin)['*'] / 1e9, 'GB in the bucket')"
           df -h /; du -sh work/*/
-      - uses: actions/upload-artifact@v4
-        with:
-          name: entry-${{ matrix.block }}
-          path: work/*.entry.json
 
-  publish:
+  sweep:
     needs: build
     if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: ubuntu-latest
@@ -82,28 +91,16 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Tools
         run: sudo apt-get update -q && sudo apt-get install -yq libicu-dev pkg-config && uv sync
-      - uses: actions/download-artifact@v4
-        with:
-          path: entries
-          pattern: entry-*
-      - name: Switch manifest
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: |
-          mkdir -p entries
-          scripts/publish.sh get-manifest old.json
-          uv run python -m mapspack merge old.json entries > manifest.json
-          scripts/publish.sh put-manifest manifest.json
-          python3 -c "import json; m=json.load(open('manifest.json')); print(sum(f['size'] for p in m['packs'] for f in p['files'])/1e9, 'GB in current packs'); [print(p['id'], p['version']) for p in m['packs']]"
       - name: Delete retired versions
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
+          scripts/publish.sh get-manifest manifest.json
+          [ -f manifest.json ] || { echo "no manifest"; exit 0; }
           scripts/publish.sh list > listing.json
           uv run python -m mapspack retired manifest.json listing.json | while read -r prefix; do
             echo "delete $prefix"; scripts/publish.sh delete "$prefix"
           done
+          scripts/publish.sh usage | python3 -c "import json, sys; print(json.load(sys.stdin)['*'] / 1e9, 'GB in the bucket')"

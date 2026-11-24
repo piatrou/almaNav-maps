@@ -8,8 +8,10 @@ from pathlib import Path
 from .config import Country, load_countries
 
 VALHALLA = "3.9.1"  # the Valhalla inside valhalla-mobile 0.6.4; the app refuses packs built for another one
-PACK_FILES = ("valhalla_tiles.tar", "lanes.json", "landmarks.json", "basemap.mbtiles", "search.sqlite", "zones.json")
+PACK_FILES = ("valhalla_tiles.tar", "trail_tiles.tar", "lanes.json", "landmarks.json", "basemap.mbtiles", "search.sqlite", "zones.json")
 KEEP_RETIRED = timedelta(days=7)  # downloads already running when the manifest switches can still finish
+# R2's free tier is 10 GB; the margin covers the manifest and a pack growing between the check and the upload
+BUDGET = 9_500_000_000
 
 
 def _sha256(path: Path) -> str:
@@ -62,4 +64,29 @@ def retired(listing: dict[str, list[str]], current: dict, now: datetime) -> list
         if now - _time(p["published"]) <= KEEP_RETIRED:
             continue
         out += [f"packs/{p['id']}/{v}/" for v in sorted(listing.get(p["id"], [])) if v != p["version"]]
+    return out
+
+
+class OverBudget(Exception):
+    """Even with every retired version gone the bucket would pass the budget: publish nothing."""
+
+
+def to_free(usage: dict[str, int], current: dict | None, incoming: int, budget: int = BUDGET) -> list[str]:
+    """Version prefixes to delete before uploading `incoming` bytes so the bucket stays within `budget`: retired
+    versions (none the manifest points to), oldest first, as few as do, ignoring the 7-day grace. A download of a
+    retired version still running then fails and starts over on the current one. Raises OverBudget."""
+    total = usage.get("*", 0) + incoming
+    if total <= budget:
+        return []
+    live = {f"packs/{p['id']}/{p['version']}/" for p in (current or {}).get("packs", [])}
+    retired_ = sorted((p for p in usage if p != "*" and p not in live), key=lambda p: (p.split("/")[2], p))
+    out = []
+    for p in retired_:
+        if total <= budget:
+            break
+        out.append(p)
+        total -= usage[p]
+    if total > budget:
+        raise OverBudget(f"{total / 1e9:.2f} GB would be stored with every retired version gone; the budget is "
+                         f"{budget / 1e9:.1f} GB")
     return out

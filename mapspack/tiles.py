@@ -26,8 +26,8 @@ def _polygons(rings: list[list[float]]) -> list[Polygon]:
     return [Polygon(list(zip(r[1::2], r[0::2]))) for r in rings]  # flat lat, lon -> (lon, lat)
 
 
-def split(tar: Path, members: dict[str, tuple[list[list[float]], Path]]) -> dict[str, int]:
-    """Writes <out dir>/valhalla_tiles.tar per member (outline as flat lat, lon rings; holes ignored, so a border
+def split(tar: Path, members: dict[str, tuple[list[list[float]], Path]], name: str = "valhalla_tiles.tar") -> dict[str, int]:
+    """Writes <out dir>/<name> per member (outline as flat lat, lon rings; holes ignored, so a border
     tile is never lost) with every tile whose box meets the outline. Returns tiles per member. An extract keeps whole
     ways, so the graph reaches past the outlines: a tile no outline meets goes to the nearest member, keeping the
     graph whole."""
@@ -35,7 +35,7 @@ def split(tar: Path, members: dict[str, tuple[list[list[float]], Path]]) -> dict
     outs = {}
     for m, (_, d) in members.items():
         Path(d).mkdir(parents=True, exist_ok=True)
-        outs[m] = tarfile.open(Path(d) / "valhalla_tiles.tar", "w", format=tarfile.USTAR_FORMAT)
+        outs[m] = tarfile.open(Path(d) / name, "w", format=tarfile.USTAR_FORMAT)
     counts = dict.fromkeys(members, 0)
     try:
         with tarfile.open(tar) as src:

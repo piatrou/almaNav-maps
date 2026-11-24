@@ -2,7 +2,9 @@ import hashlib
 from datetime import UTC, datetime
 
 from mapspack.config import load_countries
-from mapspack.manifest import merge, pack_entry, retired
+import pytest
+
+from mapspack.manifest import OverBudget, merge, pack_entry, retired, to_free
 
 CYPRUS = load_countries()[0][0]
 
@@ -38,7 +40,7 @@ def test_retired_never_touches_unknown_countries():
 
 
 def test_entry_hashes_every_file(tmp_path):
-    for n in ("valhalla_tiles.tar", "landmarks.json", "basemap.mbtiles", "search.sqlite", "zones.json"):
+    for n in ("valhalla_tiles.tar", "trail_tiles.tar", "landmarks.json", "basemap.mbtiles", "search.sqlite", "zones.json"):
         (tmp_path / n).write_text("x")
     (tmp_path / "lanes.json").write_text("{}")
     e = pack_entry(CYPRUS, "2026-12-01", tmp_path, "packs/cyprus/2026-12-01/", [[0, 0]], "2026-12-02T00:00:00Z")
@@ -73,10 +75,34 @@ def test_entry_needs_zones_when_the_country_has_them(tmp_path):
 
 
 def test_entry_names_the_block(tmp_path):
-    for n in ("valhalla_tiles.tar", "landmarks.json", "basemap.mbtiles", "search.sqlite", "lanes.json"):
+    for n in ("valhalla_tiles.tar", "trail_tiles.tar", "landmarks.json", "basemap.mbtiles", "search.sqlite", "lanes.json"):
         (tmp_path / n).write_text("x")
     nc = next(c for c in load_countries()[0] if c.id == "north-carolina")
     e = pack_entry(nc, "2026-12-01", tmp_path, "packs/north-carolina/2026-12-01/", [[0, 0]], "t")
     assert e["block"] == "us-appalachia"
     (tmp_path / "zones.json").write_text("x")
     assert "block" not in pack_entry(CYPRUS, "2026-12-01", tmp_path, "p/", [[0, 0]], "t")
+
+
+CUR = {"packs": [{"id": "cyprus", "version": "v3"}, {"id": "greece", "version": "v2"}]}
+USAGE = {"*": 9_000, "packs/cyprus/v1/": 1_000, "packs/cyprus/v2/": 2_000, "packs/cyprus/v3/": 3_000,
+         "packs/greece/v1/": 1_500, "packs/greece/v2/": 1_500}
+
+
+def test_to_free_nothing_within_budget():
+    assert to_free(USAGE, CUR, incoming=1_000, budget=10_000) == []
+
+
+def test_to_free_drops_oldest_retired_first_and_no_more_than_needed():
+    assert to_free(USAGE, CUR, incoming=2_500, budget=10_000) == ["packs/cyprus/v1/", "packs/greece/v1/"]
+
+
+def test_to_free_never_drops_a_live_version():
+    assert to_free(USAGE, CUR, incoming=5_500, budget=10_000) == ["packs/cyprus/v1/", "packs/greece/v1/",
+                                                                   "packs/cyprus/v2/"]
+    with pytest.raises(OverBudget):
+        to_free(USAGE, CUR, incoming=6_000, budget=10_000)
+
+
+def test_to_free_without_a_manifest_everything_is_retired():
+    assert to_free({"*": 3, "packs/cyprus/v1/": 3}, None, incoming=8, budget=10) == ["packs/cyprus/v1/"]

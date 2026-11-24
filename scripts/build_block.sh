@@ -33,7 +33,10 @@ ids=$(cut -d' ' -f1 <<< "$members")
 if [ "$(wc -l <<< "$members")" -eq 1 ]; then
   echo "== $BLOCK: Valhalla"
   scripts/build_valhalla.sh "${pbfs[0]}" "$W/$ids"
-  rm -f "$W/$ids/valhalla.json"
+  echo "== $BLOCK: trail graph"
+  uv run python -m mapspack trail "${pbfs[0]}" "$W/trail.osm.pbf"
+  scripts/build_valhalla.sh "$W/trail.osm.pbf" "$W/$ids" trail
+  rm -f "$W/$ids/valhalla.json" "$W/trail.osm.pbf"
 else
   echo "== $BLOCK: merged extract"
   # osmium merge streams the sorted extracts and keeps one copy of what both hold along the border
@@ -44,7 +47,13 @@ else
   scripts/build_valhalla.sh "$W/block.osm.pbf" "$W/block"
   echo "== $BLOCK: split"
   uv run python -m mapspack split "$W/block/valhalla_tiles.tar" $(for id in $ids; do printf '%s=%s ' "$id" "$W/$id"; done)
-  rm -rf "$W/block" "$W/block.osm.pbf"
+  rm -rf "$W/block"
+  echo "== $BLOCK: trail graph"
+  uv run python -m mapspack trail "$W/block.osm.pbf" "$W/trail.osm.pbf"
+  rm -f "$W/block.osm.pbf"
+  scripts/build_valhalla.sh "$W/trail.osm.pbf" "$W/block" trail
+  uv run python -m mapspack split --name trail_tiles.tar "$W/block/trail_tiles.tar" $(for id in $ids; do printf '%s=%s ' "$id" "$W/$id"; done)
+  rm -rf "$W/block" "$W/trail.osm.pbf"
 fi
 
 version=$(uv run python -m mapspack version "${pbfs[@]}")
