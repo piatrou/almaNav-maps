@@ -13,7 +13,7 @@ A pack is one country (or a Geofabrik region for the big ones), built from the G
 - an offline base map (`.mbtiles`, OpenMapTiles schema);
 - a `manifest.json` entry: version, size, sha256.
 
-Countries: [countries.yaml](countries.yaml) (Cyprus, Greece, North Carolina, Tennessee). The app reads
+Countries: [countries.yaml](countries.yaml) (Cyprus, Greece, Georgia, North Carolina, Tennessee). The app reads
 `<R2_PUBLIC_URL>/manifest.json`: per country the version (the extract's date), Valhalla version, driving side,
 outline, and every file with size and sha256 under an immutable `packs/<id>/<version>/` path.
 

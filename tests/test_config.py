@@ -5,14 +5,14 @@ from mapspack.config import blocks, load_countries, plan
 
 def test_states_share_a_block():
     countries, _ = load_countries()
-    assert {c.id: c.block for c in countries} == {"cyprus": None, "greece": None,
+    assert {c.id: c.block for c in countries} == {"cyprus": None, "greece": None, "georgia": None,
                                                    "north-carolina": "us-appalachia", "tennessee": "us-appalachia"}
 
 
 def test_blocks_group_members_and_keep_standalone_alone():
     countries, _ = load_countries()
     assert {k: [c.id for c in v] for k, v in blocks(countries).items()} == {
-        "cyprus": ["cyprus"], "greece": ["greece"], "us-appalachia": ["north-carolina", "tennessee"]}
+        "cyprus": ["cyprus"], "greece": ["greece"], "georgia": ["georgia"], "us-appalachia": ["north-carolina", "tennessee"]}
 
 
 def test_block_id_must_not_clash_with_a_country(tmp_path):
@@ -26,7 +26,7 @@ def test_block_id_must_not_clash_with_a_country(tmp_path):
 
 def test_plan_expands_a_member_to_its_block():
     assert plan(["tennessee"]) == ["us-appalachia"]
-    assert plan([]) == ["cyprus", "greece", "us-appalachia"]
+    assert plan([]) == ["cyprus", "greece", "georgia", "us-appalachia"]
     assert plan(["greece", "north-carolina", "tennessee"]) == ["greece", "us-appalachia"]
     with pytest.raises(SystemExit):
         plan(["nowhere"])
