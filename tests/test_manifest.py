@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from mapspack.config import load_countries
@@ -17,8 +18,8 @@ def test_merge_keeps_countries_not_rebuilt():
 
 
 def test_merge_orders_by_country_list_and_starts_empty():
-    new = merge(None, [{"id": "tennessee", "version": "b"}, {"id": "cyprus", "version": "c"}], "t")
-    assert [p["id"] for p in new["packs"]] == ["cyprus", "tennessee"]
+    new = merge(None, [{"id": "georgia", "version": "b"}, {"id": "cyprus", "version": "c"}], "t")
+    assert [p["id"] for p in new["packs"]] == ["cyprus", "georgia"]
 
 
 def test_merge_drops_countries_removed_from_the_list():
@@ -34,9 +35,15 @@ def test_retired_waits_seven_days():
     assert retired(listing, cur, datetime(2026, 12, 10, tzinfo=UTC)) == ["packs/cyprus/2026-11-01/"]
 
 
-def test_retired_never_touches_unknown_countries():
+def test_retired_leaves_a_listed_country_missing_from_the_manifest():
     cur = {"packs": [{"id": "cyprus", "version": "v2", "published": "2026-01-01T00:00:00Z"}]}
-    assert retired({"poland": ["v1"]}, cur, datetime(2026, 12, 10, tzinfo=UTC)) == []
+    assert retired({"greece": ["v1"]}, cur, datetime(2026, 12, 10, tzinfo=UTC)) == []
+
+
+def test_retired_deletes_every_version_of_a_country_dropped_from_the_list():
+    cur = {"packs": [{"id": "cyprus", "version": "v2", "published": "2026-12-09T00:00:00Z"}]}
+    assert retired({"poland": ["v1", "v2"]}, cur, datetime(2026, 12, 10, tzinfo=UTC)) == [
+        "packs/poland/v1/", "packs/poland/v2/"]
 
 
 def test_entry_hashes_every_file(tmp_path):
@@ -77,7 +84,7 @@ def test_entry_needs_zones_when_the_country_has_them(tmp_path):
 def test_entry_names_the_block(tmp_path):
     for n in ("valhalla_tiles.tar", "trail_tiles.tar", "landmarks.json", "basemap.mbtiles", "search.sqlite", "lanes.json"):
         (tmp_path / n).write_text("x")
-    nc = next(c for c in load_countries()[0] if c.id == "north-carolina")
+    nc = replace(CYPRUS, id="north-carolina", zones=[], block="us-appalachia")
     e = pack_entry(nc, "2026-12-01", tmp_path, "packs/north-carolina/2026-12-01/", [[0, 0]], "t")
     assert e["block"] == "us-appalachia"
     (tmp_path / "zones.json").write_text("x")

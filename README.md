@@ -13,7 +13,7 @@ A pack is one country (or a Geofabrik region for the big ones), built from the G
 - an offline base map (`.mbtiles`, OpenMapTiles schema);
 - a `manifest.json` entry: version, size, sha256.
 
-Countries: [countries.yaml](countries.yaml) (Cyprus, Greece, Georgia, North Carolina, Tennessee). The app reads
+Countries: [countries.yaml](countries.yaml) (Cyprus, Greece, Georgia). The app reads
 `<R2_PUBLIC_URL>/manifest.json`: per country the version (the extract's date), Valhalla version, driving side,
 outline, and every file with size and sha256 under an immutable `packs/<id>/<version>/` path.
 
@@ -57,14 +57,17 @@ A last `sweep` job deletes retired versions after their 7 days.
 
 ## Blocks
 
-Countries with the same `block:` in [countries.yaml](countries.yaml) (North Carolina and Tennessee:
-`us-appalachia`) are built in one job, so the app routes across their border. The members' extracts are merged
+Countries with the same `block:` in [countries.yaml](countries.yaml) (North Carolina and Tennessee were
+`us-appalachia` until 2026-11-26) are built in one job, so the app routes across their border. The members' extracts are merged
 (osmium), Valhalla builds one graph over them, and the tiles are split per member outline: a tile goes to every
 member whose outline meets it, and a tile past every outline (an extract keeps whole ways) to the nearest member.
 Tiles of one build share graph ids, so the app opens any installed members' tiles as one graph. Base map, search
 and cue tables stay per member, from its own extract. All members carry the block id and one version (the oldest
 extract date); the app routes across members of one version only. A country with no `block` is a block of one,
-built as before. `gh workflow run build.yml -f countries=tennessee` builds the whole block.
+built as before. `gh workflow run build.yml -f countries=<member>` builds the whole block.
+
+A country taken out of countries.yaml leaves the manifest at the next publish, and the sweep then deletes all
+its versions from the bucket.
 
 Measured Valhalla build cost (3.9.1, 4 threads, with elevation):
 

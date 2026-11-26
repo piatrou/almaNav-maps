@@ -2,17 +2,30 @@ import pytest
 
 from mapspack.config import blocks, load_countries, plan
 
+STATES = ("countries:\n"
+          "  - {id: cyprus, name: Cyprus, geofabrik: europe/cyprus, drives_on_left: true}\n"
+          "  - {id: greece, name: Greece, geofabrik: europe/greece, drives_on_left: false}\n"
+          "  - {id: north-carolina, name: North Carolina, geofabrik: x/nc, drives_on_left: false, block: us-appalachia}\n"
+          "  - {id: tennessee, name: Tennessee, geofabrik: x/tn, drives_on_left: false, block: us-appalachia}\n")
 
-def test_states_share_a_block():
-    countries, _ = load_countries()
-    assert {c.id: c.block for c in countries} == {"cyprus": None, "greece": None, "georgia": None,
+
+@pytest.fixture
+def states(tmp_path):
+    path = tmp_path / "c.yaml"
+    path.write_text(STATES)
+    return path
+
+
+def test_states_share_a_block(states):
+    countries, _ = load_countries(states)
+    assert {c.id: c.block for c in countries} == {"cyprus": None, "greece": None,
                                                    "north-carolina": "us-appalachia", "tennessee": "us-appalachia"}
 
 
-def test_blocks_group_members_and_keep_standalone_alone():
-    countries, _ = load_countries()
+def test_blocks_group_members_and_keep_standalone_alone(states):
+    countries, _ = load_countries(states)
     assert {k: [c.id for c in v] for k, v in blocks(countries).items()} == {
-        "cyprus": ["cyprus"], "greece": ["greece"], "georgia": ["georgia"], "us-appalachia": ["north-carolina", "tennessee"]}
+        "cyprus": ["cyprus"], "greece": ["greece"], "us-appalachia": ["north-carolina", "tennessee"]}
 
 
 def test_block_id_must_not_clash_with_a_country(tmp_path):
@@ -24,9 +37,13 @@ def test_block_id_must_not_clash_with_a_country(tmp_path):
         blocks(load_countries(tmp_path / "c.yaml")[0])
 
 
-def test_plan_expands_a_member_to_its_block():
-    assert plan(["tennessee"]) == ["us-appalachia"]
-    assert plan([]) == ["cyprus", "greece", "georgia", "us-appalachia"]
-    assert plan(["greece", "north-carolina", "tennessee"]) == ["greece", "us-appalachia"]
+def test_plan_expands_a_member_to_its_block(states):
+    assert plan(["tennessee"], states) == ["us-appalachia"]
+    assert plan([], states) == ["cyprus", "greece", "us-appalachia"]
+    assert plan(["greece", "north-carolina", "tennessee"], states) == ["greece", "us-appalachia"]
     with pytest.raises(SystemExit):
-        plan(["nowhere"])
+        plan(["nowhere"], states)
+
+
+def test_plan_of_the_real_list_builds_every_country():
+    assert plan([]) == ["cyprus", "greece", "georgia"]

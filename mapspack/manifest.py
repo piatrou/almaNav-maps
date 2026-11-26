@@ -44,7 +44,7 @@ def pack_entry(country: Country, version: str, packdir: Path, prefix: str, outli
 
 def merge(old: dict | None, built: list[dict], now: str) -> dict:
     """The new manifest: entries of rebuilt countries replaced, the others kept as they were; countries no longer
-    in countries.yaml dropped (their files in the bucket stay until removed by hand)."""
+    in countries.yaml dropped (retired() deletes their files)."""
     packs = {p["id"]: p for p in (old or {}).get("packs", [])}
     packs.update({p["id"]: p for p in built})
     order = {c.id: i for i, c in enumerate(load_countries()[0])}
@@ -57,9 +57,11 @@ def _time(s: str) -> datetime:
 
 
 def retired(listing: dict[str, list[str]], current: dict, now: datetime) -> list[str]:
-    """Version prefixes to delete: not current, once the current one has been out for more than 7 days.
-    Countries missing from the manifest are left alone."""
-    out = []
+    """Version prefixes to delete: not current, once the current one has been out for more than 7 days; every
+    version of a country dropped from countries.yaml (merge() has already taken it out of the manifest). A listed
+    country that is in the list but not yet in the manifest is left alone."""
+    known = {c.id for c in load_countries()[0]}
+    out = [f"packs/{id}/{v}/" for id in sorted(listing) if id not in known for v in sorted(listing[id])]
     for p in current.get("packs", []):
         if now - _time(p["published"]) <= KEEP_RETIRED:
             continue

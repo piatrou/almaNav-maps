@@ -54,10 +54,10 @@ def blocks(countries: list[Country]) -> dict[str, list[Country]]:
     return out
 
 
-def plan(wanted: list[str]) -> list[str]:
+def plan(wanted: list[str], path: Path = ROOT / "countries.yaml") -> list[str]:
     """Blocks to build, in list order: every block when `wanted` is empty, else the blocks of the wanted countries
     (a member is never built alone: its graph would no longer match the other members'). Unknown ids exit."""
-    countries, _ = load_countries()
+    countries, _ = load_countries(path)
     if unknown := set(wanted) - {c.id for c in countries}:
         raise SystemExit(f"unknown countries: {sorted(unknown)}")
     return [b for b, members in blocks(countries).items() if not wanted or any(c.id in wanted for c in members)]

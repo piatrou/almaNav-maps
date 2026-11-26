@@ -24,6 +24,4 @@ countries:
         relation: 1152717  # boundary=administrative, admin_level=3, South Ossetia (Tskhinvali region, occupied)
         name: South Ossetia
         warning: "This route enters South Ossetia. The line is closed to foreigners and entering is illegal under Georgian law."
-  # Countries sharing a block are built as one routing graph and routed across
-  - {id: north-carolina, name: North Carolina, geofabrik: north-america/us/north-carolina, drives_on_left: false, zones: [], block: us-appalachia}
-  - {id: tennessee, name: Tennessee, geofabrik: north-america/us/tennessee, drives_on_left: false, zones: [], block: us-appalachia}
+  # Countries sharing a block (`block: <id>`) are built as one routing graph and routed across
